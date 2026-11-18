@@ -23,7 +23,7 @@ jobs:
           workload_identity_provider: 'projects/903800984390/locations/global/workloadIdentityPools/github-pool/providers/-github-provider'
           service_account: 'garmin-logger@garmin-sync-515112.iam.gserviceaccount.com'
           token_format: 'access_token'
-          access_token_scopes: 'https://googleapis.com'
+          access_token_scopes: 'https://www.googleapis.com/auth/spreadsheets'
 
       - name: Set up Python
         uses: actions/setup-python@v4
