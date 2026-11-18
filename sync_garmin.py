@@ -1,6 +1,6 @@
 import os
 from garminconnect import Garmin
-import google.auth
+from google.oauth2.credentials import Credentials
 import gspread
 
 if os.path.exists('.env'):
@@ -26,12 +26,14 @@ def main():
     garmin_email = os.environ.get('GARMIN_EMAIL')
     garmin_password = os.environ.get('GARMIN_PASSWORD')
     sheet_id = os.environ.get('SHEET_ID')
+    access_token = os.environ.get('GOOGLE_ACCESS_TOKEN')
     
-    if not all([garmin_email, garmin_password, sheet_id]):
+    if not all([garmin_email, garmin_password, sheet_id, access_token]):
         print("❌ Missing required environment variables")
         print(f"   GARMIN_EMAIL: {'✓' if garmin_email else '✗'}")
         print(f"   GARMIN_PASSWORD: {'✓' if garmin_password else '✗'}")
         print(f"   SHEET_ID: {'✓' if sheet_id else '✗'}")
+        print(f"   GOOGLE_ACCESS_TOKEN: {'✓' if access_token else '✗'}")
         return
     
     print("Connecting to Garmin...")
@@ -64,12 +66,7 @@ def main():
     
     print("Connecting to Google Sheets...")
     try:
-        creds, _ = google.auth.default(
-            scopes=[
-                'https://googleapis.com',
-                'https://googleapis.com'
-            ]
-        )
+        creds = Credentials(token=access_token)
         client = gspread.authorize(creds)
         sheet = client.open_by_key(sheet_id).sheet1
         print("✅ Connected to Google Sheets")
