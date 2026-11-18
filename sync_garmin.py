@@ -1,9 +1,7 @@
 import os
-import json
 from garminconnect import Garmin
-from google.oauth2.service_account import Credentials
+import google.auth
 import gspread
-from datetime import datetime, timedelta
 
 # Load environment variables from .env file if it exists (for local testing)
 if os.path.exists('.env'):
@@ -32,20 +30,12 @@ def main():
     # Get credentials from environment variables
     garmin_email = os.environ.get('GARMIN_EMAIL')
     garmin_password = os.environ.get('GARMIN_PASSWORD')
-    google_creds_json = os.environ.get('GOOGLE_CREDENTIALS')
-    sheet_id = os.environ.get('SHEET_ID')  # Add sheet ID from environment
+    sheet_id = os.environ.get('SHEET_ID')
     
-    # For local testing: try to load from credentials.json file
-    if not google_creds_json and os.path.exists('credentials.json'):
-        print("Loading Google credentials from credentials.json...")
-        with open('credentials.json', 'r') as f:
-            google_creds_json = f.read()
-    
-    if not all([garmin_email, garmin_password, google_creds_json, sheet_id]):
+    if not all([garmin_email, garmin_password, sheet_id]):
         print("❌ Missing required environment variables")
         print(f"   GARMIN_EMAIL: {'✓' if garmin_email else '✗'}")
         print(f"   GARMIN_PASSWORD: {'✓' if garmin_password else '✗'}")
-        print(f"   GOOGLE_CREDENTIALS: {'✓' if google_creds_json else '✗'}")
         print(f"   SHEET_ID: {'✓' if sheet_id else '✗'}")
         return
     
@@ -59,7 +49,7 @@ def main():
         print(f"❌ Failed to connect to Garmin: {e}")
         return
     
-    # Get recent activities (last 7 days)
+    # Get recent activities
     print("Fetching recent activities...")
     try:
         activities = garmin.get_activities(0, 20)  # Get last 20 activities
@@ -80,40 +70,44 @@ def main():
         print("No running activities found in recent data")
         return
     
-    # Connect to Google Sheets
+    # Connect to Google Sheets using keyless Workload Identity Federation
     print("Connecting to Google Sheets...")
     try:
-        creds_dict = json.loads(google_creds_json)
-        creds = Credentials.from_service_account_info(
-            creds_dict,
+        creds, _ = google.auth.default(
             scopes=[
                 'https://www.googleapis.com/auth/spreadsheets',
                 'https://www.googleapis.com/auth/drive'
             ]
         )
         client = gspread.authorize(creds)
-        sheet = client.open("Garmin Data").sheet1
+        sheet = client.open_by_key(sheet_id).sheet1
         print("✅ Connected to Google Sheets")
     except Exception as e:
         print(f"❌ Failed to connect to Google Sheets: {e}")
         return
     
-    # Get existing dates to avoid duplicates
-    try:
-        existing_data = sheet.get_all_values()
-        existing_dates = set()
-        if len(existing_data) > 1:  # If there's data beyond headers
-            for row in existing_data[1:]:  # Skip header row
-                if row and row[0]:  # If date column exists
-                    existing_dates.add(row[0])
-        print(f"Found {len(existing_dates)} existing entries")
-    except Exception as e:
-        print(f"Warning: Could not check existing data: {e}")
-        existing_dates = set()
+    # Add header row automatically if the sheet is completely empty
+    existing_data = sheet.get_all_values()
+    if not existing_data:
+        headers = [
+            "Date", "Activity Name", "Distance (km)", "Duration (min)",
+            "Avg Pace (min/km)", "Avg HR", "Max HR", "Calories",
+            "Avg Cadence", "Elevation Gain (m)", "Activity Type"
+        ]
+        sheet.append_row(headers)
+        existing_data = [headers]
     
-    # Process each running activity
+    # Get existing dates to avoid duplicates
+    existing_dates = set()
+    if len(existing_data) > 1:
+        for row in existing_data[1:]:
+            if row and row[0]:
+                existing_dates.add(row[0])
+    print(f"Found {len(existing_dates)} existing entries")
+    
+    # Process each running activity (oldest first so rows stay in chronological order)
     new_entries = 0
-    for activity in running_activities:
+    for activity in reversed(running_activities):
         try:
             # Parse activity date
             activity_date = activity.get('startTimeLocal', '')[:10]  # Get YYYY-MM-DD
@@ -154,6 +148,7 @@ def main():
             
             # Append to sheet
             sheet.append_row(row)
+            existing_dates.add(activity_date)
             print(f"✅ Added: {activity_date} - {activity_name} ({distance_km} km)")
             new_entries += 1
             
