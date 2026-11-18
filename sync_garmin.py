@@ -3,31 +3,26 @@ from garminconnect import Garmin
 import google.auth
 import gspread
 
-# Load environment variables from .env file if it exists (for local testing)
 if os.path.exists('.env'):
     try:
         from dotenv import load_dotenv
         load_dotenv()
     except ImportError:
-        print("Warning: python-dotenv not installed. Install with: pip install python-dotenv")
         pass
 
 def format_duration(seconds):
-    """Convert seconds to minutes (rounded to 2 decimals)"""
     return round(seconds / 60, 2) if seconds else 0
 
 def format_pace(distance_meters, duration_seconds):
-    """Calculate pace in min/km"""
     if not distance_meters or not duration_seconds:
         return 0
     distance_km = distance_meters / 1000
     pace_seconds = duration_seconds / distance_km
-    return round(pace_seconds / 60, 2)  # Convert to min/km
+    return round(pace_seconds / 60, 2)
 
 def main():
     print("Starting Garmin running activities sync...")
     
-    # Get credentials from environment variables
     garmin_email = os.environ.get('GARMIN_EMAIL')
     garmin_password = os.environ.get('GARMIN_PASSWORD')
     sheet_id = os.environ.get('SHEET_ID')
@@ -39,7 +34,6 @@ def main():
         print(f"   SHEET_ID: {'✓' if sheet_id else '✗'}")
         return
     
-    # Connect to Garmin
     print("Connecting to Garmin...")
     try:
         garmin = Garmin(garmin_email, garmin_password)
@@ -49,16 +43,14 @@ def main():
         print(f"❌ Failed to connect to Garmin: {e}")
         return
     
-    # Get recent activities
     print("Fetching recent activities...")
     try:
-        activities = garmin.get_activities(0, 20)  # Get last 20 activities
+        activities = garmin.get_activities(0, 20)
         print(f"Found {len(activities)} total activities")
     except Exception as e:
         print(f"❌ Failed to fetch activities: {e}")
         return
     
-    # Filter for running activities only
     running_activities = [
         activity for activity in activities 
         if activity.get('activityType', {}).get('typeKey', '').lower() in ['running', 'treadmill_running', 'trail_running']
@@ -70,7 +62,6 @@ def main():
         print("No running activities found in recent data")
         return
     
-    # Connect to Google Sheets using keyless Workload Identity Federation
     print("Connecting to Google Sheets...")
     try:
         creds, _ = google.auth.default(
@@ -86,7 +77,6 @@ def main():
         print(f"❌ Failed to connect to Google Sheets: {e}")
         return
     
-    # Add header row automatically if the sheet is completely empty
     existing_data = sheet.get_all_values()
     if not existing_data:
         headers = [
@@ -97,7 +87,6 @@ def main():
         sheet.append_row(headers)
         existing_data = [headers]
     
-    # Get existing dates to avoid duplicates
     existing_dates = set()
     if len(existing_data) > 1:
         for row in existing_data[1:]:
@@ -105,19 +94,15 @@ def main():
                 existing_dates.add(row[0])
     print(f"Found {len(existing_dates)} existing entries")
     
-    # Process each running activity (oldest first so rows stay in chronological order)
     new_entries = 0
     for activity in reversed(running_activities):
         try:
-            # Parse activity date
-            activity_date = activity.get('startTimeLocal', '')[:10]  # Get YYYY-MM-DD
+            activity_date = activity.get('startTimeLocal', '')[:10]
             
-            # Skip if already in sheet
             if activity_date in existing_dates:
                 print(f"Skipping {activity_date} - already exists")
                 continue
             
-            # Extract metrics
             activity_name = activity.get('activityName', 'Run')
             distance_meters = activity.get('distance', 0)
             distance_km = round(distance_meters / 1000, 2) if distance_meters else 0
@@ -131,7 +116,6 @@ def main():
             elevation_gain = round(activity.get('elevationGain', 0), 1) if activity.get('elevationGain') else 0
             activity_type = activity.get('activityType', {}).get('typeKey', 'running')
             
-            # Prepare row
             row = [
                 activity_date,
                 activity_name,
@@ -146,7 +130,6 @@ def main():
                 activity_type
             ]
             
-            # Append to sheet
             sheet.append_row(row)
             existing_dates.add(activity_date)
             print(f"✅ Added: {activity_date} - {activity_name} ({distance_km} km)")
