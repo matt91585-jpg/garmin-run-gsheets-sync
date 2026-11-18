@@ -75,8 +75,8 @@ def main():
     try:
         creds, _ = google.auth.default(
             scopes=[
-                'https://www.googleapis.com/auth/spreadsheets',
-                'https://www.googleapis.com/auth/drive'
+                'https://googleapis.com',
+                'https://googleapis.com'
             ]
         )
         client = gspread.authorize(creds)
