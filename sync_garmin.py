@@ -10,15 +10,22 @@ if os.path.exists('.env'):
     except ImportError:
         pass
 
+METERS_PER_MILE = 1609.344
+FEET_PER_METER = 3.28084
+
 def format_duration(seconds):
+    """Convert seconds to minutes (rounded to 2 decimals)"""
     return round(seconds / 60, 2) if seconds else 0
 
-def format_pace(distance_meters, duration_seconds):
+def format_pace_min_per_mile(distance_meters, duration_seconds):
+    """Calculate pace in MM:SS per mile"""
     if not distance_meters or not duration_seconds:
-        return 0
-    distance_km = distance_meters / 1000
-    pace_seconds = duration_seconds / distance_km
-    return round(pace_seconds / 60, 2)
+        return "0:00"
+    distance_miles = distance_meters / METERS_PER_MILE
+    pace_seconds = round(duration_seconds / distance_miles)
+    minutes = pace_seconds // 60
+    seconds = pace_seconds % 60
+    return f"{minutes}:{seconds:02d}"
 
 def main():
     print("Starting Garmin running activities sync...")
@@ -77,9 +84,9 @@ def main():
     existing_data = sheet.get_all_values()
     if not existing_data:
         headers = [
-            "Date", "Activity Name", "Distance (km)", "Duration (min)",
-            "Avg Pace (min/km)", "Avg HR", "Max HR", "Calories",
-            "Avg Cadence", "Elevation Gain (m)", "Activity Type"
+            "Date", "Activity Name", "Distance (mi)", "Duration (min)",
+            "Avg Pace (min/mi)", "Avg HR", "Max HR", "Calories",
+            "Avg Cadence", "Elevation Gain (ft)", "Activity Type"
         ]
         sheet.append_row(headers)
         existing_data = [headers]
@@ -102,34 +109,35 @@ def main():
             
             activity_name = activity.get('activityName', 'Run')
             distance_meters = activity.get('distance', 0)
-            distance_km = round(distance_meters / 1000, 2) if distance_meters else 0
+            distance_miles = round(distance_meters / METERS_PER_MILE, 2) if distance_meters else 0
             duration_seconds = activity.get('duration', 0)
             duration_min = format_duration(duration_seconds)
-            avg_pace = format_pace(distance_meters, duration_seconds)
+            avg_pace = format_pace_min_per_mile(distance_meters, duration_seconds)
             avg_hr = activity.get('averageHR', 0) or 0
             max_hr = activity.get('maxHR', 0) or 0
             calories = activity.get('calories', 0) or 0
             avg_cadence = activity.get('averageRunningCadenceInStepsPerMinute', 0) or 0
-            elevation_gain = round(activity.get('elevationGain', 0), 1) if activity.get('elevationGain') else 0
+            elevation_meters = activity.get('elevationGain', 0)
+            elevation_feet = round(elevation_meters * FEET_PER_METER, 1) if elevation_meters else 0
             activity_type = activity.get('activityType', {}).get('typeKey', 'running')
             
             row = [
                 activity_date,
                 activity_name,
-                distance_km,
+                distance_miles,
                 duration_min,
                 avg_pace,
                 avg_hr,
                 max_hr,
                 calories,
                 avg_cadence,
-                elevation_gain,
+                elevation_feet,
                 activity_type
             ]
             
             sheet.append_row(row)
             existing_dates.add(activity_date)
-            print(f"✅ Added: {activity_date} - {activity_name} ({distance_km} km)")
+            print(f"✅ Added: {activity_date} - {activity_name} ({distance_miles} mi @ {avg_pace}/mi)")
             new_entries += 1
             
         except Exception as e:
